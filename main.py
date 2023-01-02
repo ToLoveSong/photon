@@ -19,6 +19,7 @@ import utime
 import sys
 import math
 import gc
+import time
 
 def splash(string):
     wri = CWriter(ssd,freesans20, fgcolor=SSD.rgb(55,55,55),bgcolor=0, verbose=False)
@@ -184,15 +185,24 @@ def otherindex(index, isoindex, mode, lastmeasure):
         derivedindex = min(range(len(fstops)), key=lambda i: abs(float(fstops[i])-N))
     return derivedindex
 
-    
-# Hardware ################################################################################################
-try:
-    LIGHTSENSOR = {"sda": 4, "scl": 5}
-    I2C = pimoroni_i2c.PimoroniI2C(**LIGHTSENSOR)
-    bh1745 = breakout_bh1745.BreakoutBH1745(I2C)
-    bh1745.leds(False)
-except:
-    print("sensor?") # A visual cue that therehas been an issue with the sensor setup
+# Power Management
+vsys = ADC(29)                                        # reads the system input voltage
+charging = Pin(24, Pin.IN)                            # reading GP24 tells us whether or not USB power is connected
+conversion_factor = 3 * 3.3 / 65535
+
+full_battery = 4.2                  # these are our reference voltages for a full/empty battery, in volts
+empty_battery = 2.8                 # the values could vary by battery size/manufacturer so you might need to adjust them
+
+voltage = vsys.read_u16() * conversion_factor
+
+x = 0
+while x < 10000:
+    voltage = vsys.read_u16() * conversion_factor
+    x+=1
+
+percentage = 100 * ((voltage - empty_battery) / (full_battery - empty_battery))
+if percentage > 100:
+    percentage = 100
 
 # Pins Setup
 pdc = Pin(20, Pin.OUT, value=0)                       # OLED DC
@@ -207,19 +217,6 @@ outA = Pin(6, mode=Pin.IN)                            # Pin CLK of encoder
 outB = Pin(7, mode=Pin.IN)                            # Pin DT of encoder
 ledPin = Pin(25, mode = Pin.OUT, value = 0)           # Onboard led on GPIO 25
 
-# Power Management
-vsys = ADC(29)                                        # reads the system input voltage
-charging = Pin(24, Pin.IN)                            # reading GP24 tells us whether or not USB power is connected
-conversion_factor = 3 * 3.3 / 65535
-
-full_battery = 4.2                  # these are our reference voltages for a full/empty battery, in volts
-empty_battery = 2.8                 # the values could vary by battery size/manufacturer so you might need to adjust them
-
-voltage = vsys.read_u16() * conversion_factor
-percentage = 100 * ((voltage - empty_battery) / (full_battery - empty_battery))
-if percentage > 100:
-    percentage = 100
-
 # setup screen
 height = 128                         # the height of the oled
 spi = SPI(0,
@@ -231,6 +228,16 @@ spi = SPI(0,
                   sck=psck,
                   mosi=pmosi)
 ssd = SSD(spi, pcs, pdc, prst, height)  # Create a display instance
+
+# Hardware ################################################################################################
+try:
+    LIGHTSENSOR = {"sda": 4, "scl": 5}
+    I2C = pimoroni_i2c.PimoroniI2C(**LIGHTSENSOR)
+    bh1745 = breakout_bh1745.BreakoutBH1745(I2C)
+    bh1745.leds(False)
+except:
+    splash("sensor?") # A visual cue that therehas been an issue with the sensor setup
+
 
 # Attach interrupt to Pins
 # attach interrupt to the outA pin ( CLK pin of encoder module )
@@ -307,7 +314,7 @@ while True:
     if counter!=lastcounter or button_current_state != button_last_state:
     # adjust aperture or shutter speed, depending on mode selected
         if isoadjust:
-            isoindex=isoindex + counter
+            isoindex=isoindex - counter
             isoindex=max(0,isoindex)
             isoindex=min(len(isonum)-1,isoindex)
         if mode=="AmbientAperture":
